@@ -1,0 +1,44 @@
+version: "3.9"
+services:
+  aspia-router:
+    image: l0ser140/aspia-router:latest
+    build:
+      context: ./
+      dockerfile: ./aspia-router/Dockerfile
+      args:
+        - ASPIA_VERSION=2.4.0
+    restart: unless-stopped
+    ports:
+      - "8060:8060"
+    volumes:
+      - /opt/aspia/data:/var/lib/aspia:rw
+      - /opt/aspia/config:/etc/aspia:rw
+    environment:
+      - RELAY_WHITELIST=10.5.0.0/24
+    networks:
+      - aspia
+  aspia-relay:
+    image: l0ser140/aspia-relay:latest
+    build:
+      context: ./
+      dockerfile: ./aspia-relay/Dockerfile
+      args:
+        - ASPIA_VERSION=2.4.0
+    restart: unless-stopped
+    ports:
+      - "8070:8070"
+    volumes:
+      - /opt/aspia/config:/etc/aspia:rw
+    environment:
+      - ROUTER_ADDRESS=aspia-router
+      - EXTERNAL_ADDRESS=127.0.0.1
+    networks:
+      - aspia
+    depends_on:
+      - aspia-router
+networks:
+  aspia:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.5.0.0/24

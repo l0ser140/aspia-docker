@@ -1,0 +1,84 @@
+#!/bin/bash
+set -e
+
+process_whitelist() {
+    WHITELIST=""
+    IFS=';' read -ra LIST <<< "$1"
+    for ip in "${LIST[@]}"; do
+        if [[ $ip == *[/]* ]]; then
+            WHITELIST+="$( prips -d 59 ${ip} )"
+        elif [[ $ip == *[-]* ]]; then
+            WHITELIST+="$( prips -d 59 $( echo ${ip} | sed 's/-/ /' ) )"
+        else
+            WHITELIST+="${ip};"
+        fi
+    done
+    echo $WHITELIST
+}
+
+ASPIA_BINARY=$(echo $ASPIA_PACKAGE | sed "s/-/_/")
+
+if [[ $ASPIA_PACKAGE = "aspia-router" ]]; then
+    if [[ ! -f /var/lib/aspia/router.db3 ]] && [[ ! -f /etc/aspia/router.json ]]  && [[ ! -f /etc/aspia/router.pub ]]; then
+        echo "Generating basic config for ${ASPIA_PACKAGE}"
+        ${ASPIA_BINARY} --create-config
+    fi
+    PUBLIC_KEY="$(cat /etc/aspia/router.pub)"
+    echo "Aspia Router public key is - ${PUBLIC_KEY}"
+
+    if [ ! -z ${PORT+x} ]; then
+        echo "Setting Port from environment variable - ${PORT}"
+        jq --arg PORT "${PORT}" '.Port = $PORT' /etc/aspia/router.json|sponge /etc/aspia/router.json
+    fi
+    if [ ! -z ${CLIENT_WHITELIST+x} ]; then
+        echo "Setting ClientWhiteList from environment variable - ${CLIENT_WHITELIST}"
+        jq --arg CLIENT_WHITELIST "$( process_whitelist ${CLIENT_WHITELIST} )" '.ClientWhiteList = $CLIENT_WHITELIST' /etc/aspia/router.json|sponge /etc/aspia/router.json
+    fi
+    if [ ! -z ${HOST_WHITELIST+x} ]; then
+        echo "Setting HostWhiteList from environment variable - ${HOST_WHITELIST}"
+        jq --arg HOST_WHITELIST "$( process_whitelist ${HOST_WHITELIST} )" '.HostWhiteList = $HOST_WHITELIST' /etc/aspia/router.json|sponge /etc/aspia/router.json
+    fi
+    if [ ! -z ${ADMIN_WHITELIST+x} ]; then
+        echo "Setting AdminWhiteList from environment variable - ${ADMIN_WHITELIST}"
+        jq --arg ADMIN_WHITELIST "$( process_whitelist ${ADMIN_WHITELIST} )" '.AdminWhiteList = $ADMIN_WHITELIST' /etc/aspia/router.json|sponge /etc/aspia/router.json
+    fi
+    if [ ! -z ${RELAY_WHITELIST+x} ]; then
+        echo "Setting RelayWhiteList from environment variable - ${RELAY_WHITELIST}"
+        jq --arg RELAY_WHITELIST "$( process_whitelist ${RELAY_WHITELIST} )" '.RelayWhiteList = $RELAY_WHITELIST' /etc/aspia/router.json|sponge /etc/aspia/router.json
+    fi
+fi
+
+if [[ $ASPIA_PACKAGE = "aspia-relay" ]]; then
+    if  [[ ! -f /etc/aspia/relay.json ]]; then
+        echo "Generating basic config for ${ASPIA_PACKAGE}"
+        ${ASPIA_BINARY} --create-config
+    fi
+
+    if [ -z ${PUBLIC_KEY+x} ] && [[ -f /etc/aspia/router.pub ]]; then
+        echo "Setting RouterPublicKey in Aspia Relay from 'router.pub' file..."
+        PUBLIC_KEY="$(cat /etc/aspia/router.pub)"
+    fi
+
+    if [ ! -z ${PUBLIC_KEY+x} ]; then
+        echo "Setting RouterPublicKey from environment variable - ${PUBLIC_KEY}"
+        jq --arg PUBLIC_KEY "${PUBLIC_KEY}" '.RouterPublicKey = $PUBLIC_KEY' /etc/aspia/relay.json|sponge /etc/aspia/relay.json
+    fi
+    if [ ! -z ${ROUTER_ADDRESS+x} ]; then
+        echo "Setting RouterAddress from environment variable - ${ROUTER_ADDRESS}"
+        jq --arg ROUTER_ADDRESS "${ROUTER_ADDRESS}" '.RouterAddress = $ROUTER_ADDRESS' /etc/aspia/relay.json|sponge /etc/aspia/relay.json
+    fi
+    if [ ! -z ${ROUTER_PORT+x} ]; then
+        echo "Setting RouterPort from environment variable - ${ROUTER_PORT}"
+        jq --arg ROUTER_PORT "${ROUTER_PORT}" '.RouterPort = $ROUTER_PORT' /etc/aspia/relay.json|sponge /etc/aspia/relay.json
+    fi
+    if [ ! -z ${EXTERNAL_ADDRESS+x} ]; then
+        echo "Setting PeerAddress from environment variable - ${EXTERNAL_ADDRESS}"
+        jq --arg EXTERNAL_ADDRESS "${EXTERNAL_ADDRESS}" '.PeerAddress = $EXTERNAL_ADDRESS' /etc/aspia/relay.json|sponge /etc/aspia/relay.json
+    fi
+    if [ ! -z ${PORT+x} ]; then
+        echo "Setting PeerPort from environment variable - ${PORT}"
+        jq --arg EXTERNAL_ADDRESS "${PORT}" '.PeerPort = $PORT' /etc/aspia/relay.json|sponge /etc/aspia/relay.json
+    fi
+fi
+
+exec ${ASPIA_BINARY} $@
